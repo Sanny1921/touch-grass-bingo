@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Touch Grass Bingo</title>
+<style>
+:root{--bg:#0f1a12;--card:#17261b;--line:#2c4733;--g:#7ddc6b;--y:#ffd54a;--t:#eef7ea;--m:#9db8a2}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#21402a,#0f1a12 60%);color:var(--t);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+main{max-width:520px;margin:0 auto;padding:20px 14px 40px}
+h1{font-size:30px;margin:6px 0 2px;letter-spacing:-.5px}h1 span{color:var(--g)}
+p.sub{color:var(--m);margin:0 0 18px;font-size:15px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+label{font-size:13px;color:var(--m);display:block;margin:8px 0 4px}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#0f1a12;color:var(--t);font-size:16px}
+button.go{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:var(--g);color:#0b2410;font-weight:800;font-size:17px;cursor:pointer}
+button.go:disabled{opacity:.6}
+#status{font-size:13px;color:var(--m);margin-top:10px;min-height:18px}
+.bar{height:6px;background:#0f1a12;border-radius:4px;overflow:hidden;margin-top:8px;display:none}.bar i{display:block;height:100%;width:0;background:var(--g);transition:width .2s}
+#grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.sq{aspect-ratio:1;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:10.5px;line-height:1.15;padding:4px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--t);cursor:pointer;user-select:none;position:relative;word-break:break-word}
+.sq.on{background:var(--g);color:#0b2410;font-weight:700;border-color:var(--g)}
+.sq.on::after{content:"\2713";position:absolute;top:1px;right:4px;font-size:11px}
+.sq.free{background:var(--y);color:#3a2a00;font-weight:800;border-color:var(--y)}
+.sq.bingo{box-shadow:0 0 0 2px var(--y)}
+#head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+#score{font-weight:700}#msg{color:var(--y);font-weight:800;min-height:22px;margin:10px 0 0;text-align:center}
+.small{font-size:12px;color:var(--m);text-align:center;margin-top:16px}
+.hide{display:none}
+</style></head><body><main>
+<h1>Touch Grass <span>Bingo</span></h1>
+<p class="sub">An open-weight AI invents a bingo card for your neighbourhood. Put the phone away and go tick it off.</p>
+<section class="panel" id="form">
+<label>Your city / area</label><input id="city" placeholder="e.g. Pune, Koregaon Park" value="">
+<label>Time you have</label>
+<select id="time"><option>15 minutes</option><option selected>30 minutes</option><option>1 hour</option><option>2 hours</option></select>
+<label>Vibe</label>
+<select id="vibe"><option>Chill walk</option><option>Photo hunt</option><option>Street food and people</option><option>Nature and wildlife</option></select>
+<button class="go" id="go">Generate my card</button>
+<div class="bar" id="bar"><i id="fill"></i></div><div id="status"></div>
+</section>
+<section id="game" class="hide">
+<div id="head"><div id="score">0 / 24</div><button class="go" style="width:auto;margin:0;padding:8px 14px;font-size:14px" id="again">New card</button></div>
+<div id="grid"></div><div id="msg"></div>
+</section>
+<p class="small" id="engine">Model runs in your browser. No server, no API key.</p>
+</main>
+<script type="module">
+const MODEL="Llama-3.2-1B-Instruct-q4f16_1-MLC";
+const $=id=>document.getElementById(id);
+const FALLBACK=["Spot a street dog","Find something yellow","Hear a bird you can't name","A tree with interesting bark","Someone flying a kite","A chai or tea stall","Cloud shaped like an animal","A flower growing in a crack","Find a shadow that looks funny","A kid playing outside","Smell something good","Wave at a stranger","Count 10 steps barefoot on grass","A butterfly or dragonfly","A mural or wall art","A bicycle or cycle rickshaw","Find a leaf bigger than your hand","See the sky with no wires","A tiny shop you never noticed","Watch an ant for 20 seconds","Take a photo of a doorway","Find three different greens","An old tree older than you","Hear water somewhere","A neighbour's plant on a balcony"];
+function prompt(city,time,vibe){return `You design outdoor bingo cards. Place: ${city||"a city neighbourhood"}. Time available: ${time}. Vibe: ${vibe}.
+Return ONLY a JSON array of exactly 24 short strings (max 7 words each). Each is something to spot or do outside on foot, specific to that place and culture, safe, free, no phone use. No numbering, no extra text.`}
+function parse(t){const m=t.match(/\[[\s\S]*\]/);if(!m)return null;try{let a=JSON.parse(m[0]).map(String).map(s=>s.trim()).filter(Boolean);a=[...new Set(a)];return a.length>=24?a.slice(0,24):null}catch(e){return null}}
+let engine=null;
+async function generate(city,time,vibe){
+ if(!navigator.gpu) throw new Error("nogpu");
+ const {CreateMLCEngine}=await import("https://esm.run/@mlc-ai/web-llm");
+ if(!engine){engine=await CreateMLCEngine(MODEL,{initProgressCallback:p=>{$("status").textContent=p.text;$("fill").style.width=(p.progress*100)+"%"}})}
+ $("status").textContent="Thinking up your card...";
+ for(let i=0;i<3;i++){
+  const r=await engine.chat.completions.create({messages:[{role:"user",content:prompt(city,time,vibe)}],temperature:.9,max_tokens:600});
+  const a=parse(r.choices[0].message.content);if(a)return a;
+ }
+ throw new Error("badjson");
+}
+let squares=[],done=new Set();
+function render(items,src){
+ const a=[...items];squares=[...a.slice(0,12),"FREE",...a.slice(12,24)];done=new Set([12]);
+ $("form").classList.add("hide");$("game").classList.remove("hide");
+ $("engine").textContent=src;draw();
+}
+function lines(){const L=[];for(let i=0;i<5;i++){L.push([0,1,2,3,4].map(j=>i*5+j));L.push([0,1,2,3,4].map(j=>j*5+i))}L.push([0,6,12,18,24],[4,8,12,16,20]);return L}
+function draw(){
+ const win=new Set();let n=0;lines().forEach(l=>{if(l.every(i=>done.has(i))){n++;l.forEach(i=>win.add(i))}});
+ $("grid").innerHTML="";
+ squares.forEach((s,i)=>{const d=document.createElement("div");d.className="sq"+(i==12?" free":"")+(done.has(i)?" on":"")+(win.has(i)?" bingo":"");d.textContent=s;
+  if(i!=12)d.onclick=()=>{done.has(i)?done.delete(i):done.add(i);draw()};$("grid").appendChild(d)});
+ $("score").textContent=(done.size-1)+" / 24";
+ $("msg").textContent=n?`BINGO x${n}! Now go sit on actual grass.`:"";
+}
+$("again").onclick=()=>{$("game").classList.add("hide");$("form").classList.remove("hide");$("go").disabled=false;$("bar").style.display="none";$("status").textContent=""};
+$("go").onclick=async()=>{
+ $("go").disabled=true;$("bar").style.display="block";$("status").textContent="Loading the open model (first time ~700MB, then cached)...";
+ const city=$("city").value.trim(),time=$("time").value,vibe=$("vibe").value;
+ try{const a=await generate(city,time,vibe);render(a,`Card written by ${MODEL} (open-weight Llama 3.2) running in your browser.`)}
+ catch(e){const why=e.message==="nogpu"?"This browser has no WebGPU":"The model gave unusable output";
+  render([...FALLBACK].sort(()=>Math.random()-.5),`${why}, so this is the built-in starter card. Open on Chrome (Android or desktop) to get an AI-written card.`)}
+};
+if(location.search.includes("demo")){render(["Find a chai stall with a queue","A cow chilling on the road","Spot a crow stealing food","Someone selling marigolds","A tree wrapped in a red thread","Hear a temple bell","A rickshaw with funny art","Kids playing gully cricket","A banyan tree with hanging roots","Find a yellow flower","Smell fresh jalebi","A pigeon on a wire","Wave at an uncle on a morning walk","A neem tree","A balcony full of plants","Parrots in a tree","A wall poster older than you","Someone doing yoga outside","A water tanker truck","A dog asleep in a shop","A paan stall","Cloud shaped like something","Find a sunset colour","A school bus"],"Card written by Llama-3.2-1B-Instruct (open-weight) running in your browser.");
+ [0,1,2,5,6,7,8,10,11,13,15,16,17,20].forEach(i=>done.add(i));draw()}
+</script></body></html>
