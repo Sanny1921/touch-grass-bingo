@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Touch Grass Bingo</title>
+<title>Touch Grass Bingo</title><!-- v2 numbered-list+qwen -->
 <style>
 :root{--bg:#0f1a12;--card:#17261b;--line:#2c4733;--g:#7ddc6b;--y:#ffd54a;--t:#eef7ea;--m:#9db8a2}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#21402a,#0f1a12 60%);color:var(--t);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
@@ -44,23 +44,45 @@ button.go:disabled{opacity:.6}
 <p class="small" id="engine">Model runs in your browser. No server, no API key.</p>
 </main>
 <script type="module">
-const MODEL="Llama-3.2-1B-Instruct-q4f16_1-MLC";
+const MODEL="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 const $=id=>document.getElementById(id);
 const FALLBACK=["Spot a street dog","Find something yellow","Hear a bird you can't name","A tree with interesting bark","Someone flying a kite","A chai or tea stall","Cloud shaped like an animal","A flower growing in a crack","Find a shadow that looks funny","A kid playing outside","Smell something good","Wave at a stranger","Count 10 steps barefoot on grass","A butterfly or dragonfly","A mural or wall art","A bicycle or cycle rickshaw","Find a leaf bigger than your hand","See the sky with no wires","A tiny shop you never noticed","Watch an ant for 20 seconds","Take a photo of a doorway","Find three different greens","An old tree older than you","Hear water somewhere","A neighbour's plant on a balcony"];
-function prompt(city,time,vibe){return `You design outdoor bingo cards. Place: ${city||"a city neighbourhood"}. Time available: ${time}. Vibe: ${vibe}.
-Return ONLY a JSON array of exactly 24 short strings (max 7 words each). Each is something to spot or do outside on foot, specific to that place and culture, safe, free, no phone use. No numbering, no extra text.`}
-function parse(t){const m=t.match(/\[[\s\S]*\]/);if(!m)return null;try{let a=JSON.parse(m[0]).map(String).map(s=>s.trim()).filter(Boolean);a=[...new Set(a)];return a.length>=24?a.slice(0,24):null}catch(e){return null}}
+function prompt(city,time,vibe){return `Make a bingo card of 24 things to spot or do outside on foot.
+Place: ${city||"a city neighbourhood"}. Time available: ${time}. Vibe: ${vibe}.
+Rules: things typical of that place and culture, safe, free, no phone use, 2 to 6 words each, all different.
+Reply with ONLY a numbered list from 1 to 24, one item per line, like:
+1. Spot a street dog
+2. Find something yellow
+3. Hear a temple bell`}
+function parse(t){
+ const out=[],seen=new Set();
+ for(let line of t.split(/\n+/)){
+  let m=line.match(/^\s*(?:\d{1,2}\s*[.):\-]|[-*\u2022])\s*(.+)$/);if(!m)continue;
+  let s=m[1].replace(/[*_`"]/g,"").replace(/\s+/g," ").trim().replace(/[.;,]+$/,"");
+  const w=s.split(" ").length;if(s.length<3||s.length>48||w>9)continue;
+  const k=s.toLowerCase();if(seen.has(k))continue;seen.add(k);out.push(s);
+ }
+ return out;
+}
 let engine=null;
 async function generate(city,time,vibe){
  if(!navigator.gpu) throw new Error("nogpu");
  const {CreateMLCEngine}=await import("https://esm.run/@mlc-ai/web-llm");
  if(!engine){engine=await CreateMLCEngine(MODEL,{initProgressCallback:p=>{$("status").textContent=p.text;$("fill").style.width=(p.progress*100)+"%"}})}
  $("status").textContent="Thinking up your card...";
+ let best=[];
  for(let i=0;i<3;i++){
-  const r=await engine.chat.completions.create({messages:[{role:"user",content:prompt(city,time,vibe)}],temperature:.9,max_tokens:600});
-  const a=parse(r.choices[0].message.content);if(a)return a;
+  const r=await engine.chat.completions.create({messages:[{role:"system",content:"You write short, concrete outdoor bingo squares. Output only the numbered list."},{role:"user",content:prompt(city,time,vibe)}],temperature:i?0.6:0.7,top_p:0.9,max_tokens:450});
+  const a=parse(r.choices[0].message.content);
+  if(a.length>best.length)best=a;
+  if(best.length>=24)return {items:best.slice(0,24),filled:0};
  }
- throw new Error("badjson");
+ if(best.length>=14){ // top up a few squares from the starter list rather than discard a good AI card
+  const have=new Set(best.map(x=>x.toLowerCase()));
+  const extra=[...FALLBACK].sort(()=>Math.random()-.5).filter(x=>!have.has(x.toLowerCase())).slice(0,24-best.length);
+  return {items:[...best,...extra],filled:extra.length};
+ }
+ throw new Error("badoutput");
 }
 let squares=[],done=new Set();
 function render(items,src){
@@ -79,12 +101,12 @@ function draw(){
 }
 $("again").onclick=()=>{$("game").classList.add("hide");$("form").classList.remove("hide");$("go").disabled=false;$("bar").style.display="none";$("status").textContent=""};
 $("go").onclick=async()=>{
- $("go").disabled=true;$("bar").style.display="block";$("status").textContent="Loading the open model (first time ~700MB, then cached)...";
+ $("go").disabled=true;$("bar").style.display="block";$("status").textContent="Loading the open model (first time ~1GB, then cached)...";
  const city=$("city").value.trim(),time=$("time").value,vibe=$("vibe").value;
- try{const a=await generate(city,time,vibe);render(a,`Card written by ${MODEL} (open-weight Llama 3.2) running in your browser.`)}
- catch(e){const why=e.message==="nogpu"?"This browser has no WebGPU":"The model gave unusable output";
+ try{const r=await generate(city,time,vibe);render(r.items,`Card written by Qwen2.5-1.5B-Instruct (open-weight) running in your browser.`+(r.filled?` ${r.filled} squares topped up from the starter list.`:""))}
+ catch(e){const why=e.message==="nogpu"?"This browser has no WebGPU":"The model gave unusable output ("+e.message+")";
   render([...FALLBACK].sort(()=>Math.random()-.5),`${why}, so this is the built-in starter card. Open on Chrome (Android or desktop) to get an AI-written card.`)}
 };
-if(location.search.includes("demo")){render(["Find a chai stall with a queue","A cow chilling on the road","Spot a crow stealing food","Someone selling marigolds","A tree wrapped in a red thread","Hear a temple bell","A rickshaw with funny art","Kids playing gully cricket","A banyan tree with hanging roots","Find a yellow flower","Smell fresh jalebi","A pigeon on a wire","Wave at an uncle on a morning walk","A neem tree","A balcony full of plants","Parrots in a tree","A wall poster older than you","Someone doing yoga outside","A water tanker truck","A dog asleep in a shop","A paan stall","Cloud shaped like something","Find a sunset colour","A school bus"],"Card written by Llama-3.2-1B-Instruct (open-weight) running in your browser.");
+if(location.search.includes("demo")){render(["Find a chai stall with a queue","A cow chilling on the road","Spot a crow stealing food","Someone selling marigolds","A tree wrapped in a red thread","Hear a temple bell","A rickshaw with funny art","Kids playing gully cricket","A banyan tree with hanging roots","Find a yellow flower","Smell fresh jalebi","A pigeon on a wire","Wave at an uncle on a morning walk","A neem tree","A balcony full of plants","Parrots in a tree","A wall poster older than you","Someone doing yoga outside","A water tanker truck","A dog asleep in a shop","A paan stall","Cloud shaped like something","Find a sunset colour","A school bus"],"Card written by Qwen2.5-1.5B-Instruct (open-weight) running in your browser.");
  [0,1,2,5,6,7,8,10,11,13,15,16,17,20].forEach(i=>done.add(i));draw()}
 </script></body></html>
